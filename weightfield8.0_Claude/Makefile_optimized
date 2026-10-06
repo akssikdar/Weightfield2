@@ -1,0 +1,42 @@
+
+# Compiler and flags
+CXX      := clang++
+ROOTCFLAGS := $(shell root-config --cflags)
+ROOTLIBS  := $(shell root-config --glibs)
+
+# Build modes
+MODE ?= release
+
+ifeq ($(MODE),release)
+    CXXFLAGS := -std=c++17 -O3 -ffast-math -fno-finite-math-only -Wall -Wextra $(ROOTCFLAGS)
+else ifeq ($(MODE),debug)
+    CXXFLAGS := -std=c++17 -O0 -g -Wall -Wextra $(ROOTCFLAGS)
+else
+    $(error Unknown build mode "$(MODE)". Use 'make MODE=release' or 'make MODE=debug')
+endif
+
+LDFLAGS  := $(ROOTLIBS)
+
+# Dictionary generation
+DICT_HDR := Potentials.h Field.h Carriers.h WFGUI.h
+DICT_SRC := Dict.cxx
+LINKDEF  := LinkDef.h
+
+# Sources
+SRCS     := Weightfield.cxx WFGUI.cxx Potentials.cxx Field.cxx Carriers.cxx $(DICT_SRC)
+TARGET   := weightfield
+
+# Default rule
+all: $(TARGET)
+
+# Dictionary rule (modern ROOT uses rootcling)
+$(DICT_SRC): $(DICT_HDR) $(LINKDEF)
+	rootcling -f $(DICT_SRC) -c $(DICT_HDR) $(LINKDEF)
+
+# Link everything into the final executable
+$(TARGET): $(SRCS)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Clean
+clean:
+	rm -f $(TARGET) $(DICT_SRC) *.pcm *.o *~
