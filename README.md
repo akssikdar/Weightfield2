@@ -6,6 +6,8 @@ Weightfield2:  a freeware 2D simulator for silicon and diamond detector
 
 ## Parent website:  https://www.to.infn.it/~cartigli/Weightfield2/index.html
 
+Contacts: cartiglia-at-to.infn.it
+
 ## Installation
 Supported OS: Mac and Linux
 (MacOS 12.5 and XCode 13.5 with root 6.26/06 or newer)
