@@ -161,6 +161,15 @@ class WFGUI : public TGMainFrame {
   double ShNoise;
   double Fluence;
   double Quench;
+  double MeasuredGain;      // qtot/(qe+qh) of the MOST RECENT event only (kept for reference/debugging)
+  double ChargeCollected;   // qtot in fC of the MOST RECENT event only (kept for reference/debugging)
+  double SumQtot;           // running sum of qtot over all events in the current batch
+  double SumQnogain;        // running sum of (qe+qh) over all events in the current batch
+  long   SumEventCount;     // number of events accumulated into the sums above
+  double BulkDoping;        // N/cm^3, pre-irradiation, filled by Potentials::SetDopingProfile
+  double BulkDopingIrr;     // N/cm^3, after irradiation, filled by Potentials::SetDopingProfile
+  bool   ScanStopRequested; // set by the Scan section's Stop button
+  int    ScanActiveParam;   // -1 = no scan running; 0=Bias,1=Temp,2=Thickness,3=Fluence while ScanStart() loops
   double BetaElectrons;
   double BetaHoles;
   
@@ -586,6 +595,22 @@ class WFGUI : public TGMainFrame {
   TGTextButton *SetButton;
   TGTextButton *StopButton;
   TGTextButton *ExitButton;
+
+  // ---- Scan section (below Run, above Precision) ----
+  TGGroupFrame *ScanGroupFrame;
+  TGHorizontalFrame *ScanParamFrame;
+  TGHorizontalFrame *ScanRangeFrame;
+  TGHorizontalFrame *ScanButtonFrame;
+  TGLabel *ScanParamLabel;
+  TGComboBox *ScanParamCombo;      // 0=Bias, 1=Temperature, 2=Thickness, 3=Fluence
+  TGLabel *ScanInitialLabel;
+  TGNumberEntry *ScanInitialEntry;
+  TGLabel *ScanFinalLabel;
+  TGNumberEntry *ScanFinalEntry;
+  TGLabel *ScanStepLabel;
+  TGNumberEntry *ScanStepEntry;
+  TGTextButton *ScanStartButton;
+  TGTextButton *ScanStopButton;
   TGTextButton *BetweenStripsButton;
   TGTextButton *BetweenStripsButton2;
   TGTextButton *OnStripsButton;
@@ -951,6 +976,20 @@ class WFGUI : public TGMainFrame {
 	void SetCSATVth(double);
 	double GetCSATVth();
 	
+	void SetMeasuredGain(double);
+	double GetMeasuredGain();
+	void SetChargeCollected(double);
+	double GetChargeCollected();
+	void ResetGainChargeAccumulator();               // called once at the start of each batch
+	void AddGainChargeSample(double qtot, double qnogain); // called once per event, accumulates
+	double GetAvgGain();                              // Sum(qtot)/Sum(qe+qh) over the whole batch
+	double GetAvgChargeCollected();                   // average qtot per event, in fC
+	void SetBulkDoping(double);
+	double GetBulkDoping();
+	void SetBulkDopingIrr(double);
+	double GetBulkDopingIrr();
+	void ScanStart();   // runs Potentials+Currents over a range of the selected parameter
+	void ScanStop();    // requests the running scan to stop after the current step
 	void SetJitter(double);
 	double GetJitter();
 	void SetFJitter(double);

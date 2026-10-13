@@ -1,4 +1,7 @@
 #include "WFGUI.h"
+#include <fstream>
+#include <sstream>
+#include <string>
 /////////////////////////////// ///////////////////////////////////////////////////////
 Carriers::Carriers() {
 	x=0;
@@ -2608,6 +2611,34 @@ void CalculateCurrents(Potentials &pot, Field **dfield, Field **wfield, std::vec
 	    qeg+=ieg[i]*TIMEUNIT;			// sum up collected charge due to gain holes motion
 	    
 	  }
+	// --- raw per-event charge breakdown, in fC: console (as before) plus a CSV log ---
+	cout << "DEBUG charge breakdown [fC]: qe=" << qe*1e15 << " qh=" << qh*1e15
+	     << " qeg=" << qeg*1e15 << " qhg=" << qhg*1e15
+	     << " qtot=" << qtot*1e15 << " (qe+qh)=" << (qe+qh)*1e15 << endl;
+	{
+	    // Single fixed diagnostic log (not split per configuration, unlike the
+	    // batch-summary CSV) -- every event from every run appends here, along
+	    // with Bias and Temperature (the two values Carriers.cxx can read back
+	    // through already-confirmed WFGUI getters) so you can still tell runs
+	    // apart without risking unit-mismatched filenames from other getters.
+	    const char* evname = "wf2_events_debug.csv";
+	    std::ifstream checkev(evname);
+	    bool evNeedHeader = !checkev.good();
+	    checkev.close();
+	    std::ofstream evcsv(evname, std::ios::app);
+	    if (evNeedHeader)
+	      evcsv << "EventNumber,Bias_V,Temperature_K,qe_fC,qh_fC,qeg_fC,qhg_fC,qtot_fC,qe_plus_qh_fC\n";
+	    evcsv << Counter        << ","
+	          << gui->GetVBias() << ","
+	          << gui->GetT()     << ","
+	          << qe*1e15        << ","
+	          << qh*1e15        << ","
+	          << qeg*1e15       << ","
+	          << qhg*1e15       << ","
+	          << qtot*1e15      << ","
+	          << (qe+qh)*1e15   << "\n";
+	    evcsv.close();
+	}
 	//	cout << " Endo of loop t " << endl;
 	//here endo of current
 	//	std::stringstream ss;
@@ -2699,6 +2730,11 @@ void CalculateCurrents(Potentials &pot, Field **dfield, Field **wfield, std::vec
 		gui->Getcanvasp()->cd();
 		l.DrawLatex( 20, gui->GetYMax()/3 ,s3.str().c_str());
 		gui->Getcanvasp()->Update();
+
+		// --- store for CSV export ---
+		gui->SetMeasuredGain(GainScale*(qeg+qhg)/(qe+qh)+1); // forced-gain corrected value, last event only
+		gui->SetChargeCollected(qtot*1e15); // fC, last event only
+		gui->AddGainChargeSample(qtot, qe+qh); // accumulate into the batch-wide average
 	      }
 	    
 	    else
@@ -2720,6 +2756,11 @@ void CalculateCurrents(Potentials &pot, Field **dfield, Field **wfield, std::vec
 		l4.DrawLatex( 20, gui->GetYMax()/4 ,s4.str().c_str());
 		
 		gui->Getcanvasp()->Update();
+
+		// --- store for CSV export ---
+		gui->SetMeasuredGain(qtot/(qe+qh)); // last event only (kept for reference)
+		gui->SetChargeCollected(qtot*1e15); // fC, last event only
+		gui->AddGainChargeSample(qtot, qe+qh); // accumulate into the batch-wide average
 	      }
 	    
 	    //	    cout << "Here2" << endl;

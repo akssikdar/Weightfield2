@@ -1,4 +1,6 @@
 #include "WFGUI.h"
+#include "TSystem.h"
+#include <cmath>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -123,6 +125,11 @@ WFGUI::WFGUI(const TGWindow *p, UInt_t w, UInt_t h, TApplication *app): TGMainFr
   wf   = nullptr;
   gain = nullptr;
   dfAllocYMAX = 0;
+  ScanStopRequested = false;
+  ScanActiveParam = -1;
+  SumQtot = 0.;
+  SumQnogain = 0.;
+  SumEventCount = 0;
 
     //take intial varible names from parameters file
   //  const char* ifname = "parameters.dat";
@@ -661,6 +668,67 @@ WFGUI::WFGUI(const TGWindow *p, UInt_t w, UInt_t h, TApplication *app): TGMainFr
     
     //add frames
 	ControlFrame->AddFrame(ButtonPotFrame,new TGLayoutHints(kLHintsTop | kLHintsCenterY | kLHintsExpandX ,1,1,1,1));
+    ////////////////////////////////////////////
+
+    ////////////////////////////////////////////
+    /////////SCAN FRAME/////////////
+    //create frames
+    ScanGroupFrame = new TGGroupFrame(ControlFrame,"Scan",kVerticalFrame);
+    ScanParamFrame  = new TGHorizontalFrame(ScanGroupFrame);
+    ScanRangeFrame  = new TGHorizontalFrame(ScanGroupFrame);
+    ScanButtonFrame = new TGHorizontalFrame(ScanGroupFrame);
+
+    //create entries
+    ScanParamLabel = new TGLabel(ScanParamFrame,"Scan parameter:");
+    ScanParamCombo = new TGComboBox(ScanParamFrame);
+    ScanParamCombo->AddEntry(new TGString("Bias [V]"), 0);
+    ScanParamCombo->AddEntry(new TGString("Temperature [K]"), 1);
+    ScanParamCombo->AddEntry(new TGString("Thickness [um]"), 2);
+    ScanParamCombo->AddEntry(new TGString("Fluence [1e14 neq/cm2]"), 3);
+    ScanParamCombo->Resize(160,20);
+    ScanParamCombo->Select(0);
+
+    ScanInitialLabel = new TGLabel(ScanRangeFrame,"Initial:");
+    ScanInitialEntry = new TGNumberEntry(ScanRangeFrame, 0, 6,-1,TGNumberFormat::kNESReal,TGNumberFormat::kNEAAnyNumber,TGNumberFormat::kNELNoLimits);
+    ScanFinalLabel   = new TGLabel(ScanRangeFrame,"Final:");
+    ScanFinalEntry   = new TGNumberEntry(ScanRangeFrame, 700, 6,-1,TGNumberFormat::kNESReal,TGNumberFormat::kNEAAnyNumber,TGNumberFormat::kNELNoLimits);
+    ScanStepLabel    = new TGLabel(ScanRangeFrame,"Step:");
+    ScanStepEntry    = new TGNumberEntry(ScanRangeFrame, 5, 6,-1,TGNumberFormat::kNESReal,TGNumberFormat::kNEAAnyNumber,TGNumberFormat::kNELNoLimits);
+
+    ScanStartButton = new TGTextButton(ScanButtonFrame," Start Scan ");
+    ScanStopButton  = new TGTextButton(ScanButtonFrame," Stop Scan ");
+
+    //develop entries
+    // (ScanParamCombo needs no Connect() — its current selection is read
+    //  directly with GetSelected() inside ScanStart() when you click Start)
+    ScanStartButton->Associate(this);
+    ScanStartButton->SetBackgroundColor(0x66aaff);
+    ScanStartButton->Connect("Clicked()","WFGUI",this,"ScanStart()");
+    ScanStartButton->SetEnabled(kTRUE);
+    ScanStopButton->Associate(this);
+    ScanStopButton->SetBackgroundColor(0xff0000);
+    ScanStopButton->Connect("Clicked()","WFGUI",this,"ScanStop()");
+    ScanStopButton->SetEnabled(kTRUE);
+
+    //add entries
+    ScanParamFrame->AddFrame(ScanParamLabel, new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+    ScanParamFrame->AddFrame(ScanParamCombo, new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+
+    ScanRangeFrame->AddFrame(ScanInitialLabel, new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+    ScanRangeFrame->AddFrame(ScanInitialEntry, new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+    ScanRangeFrame->AddFrame(ScanFinalLabel,   new TGLayoutHints(kLHintsLeft | kLHintsCenterY,4,1,1,1));
+    ScanRangeFrame->AddFrame(ScanFinalEntry,   new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+    ScanRangeFrame->AddFrame(ScanStepLabel,    new TGLayoutHints(kLHintsLeft | kLHintsCenterY,4,1,1,1));
+    ScanRangeFrame->AddFrame(ScanStepEntry,    new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+
+    ScanButtonFrame->AddFrame(ScanStartButton, new TGLayoutHints(kLHintsCenterX,1,1,1,1));
+    ScanButtonFrame->AddFrame(ScanStopButton,  new TGLayoutHints(kLHintsCenterX,1,1,1,1));
+
+    //add frames
+    ScanGroupFrame->AddFrame(ScanParamFrame,  new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 0,0,0,0));
+    ScanGroupFrame->AddFrame(ScanRangeFrame,  new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 0,0,0,0));
+    ScanGroupFrame->AddFrame(ScanButtonFrame, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 0,0,0,0));
+    ControlFrame->AddFrame(ScanGroupFrame, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 1,1,1,1));
     ////////////////////////////////////////////
 
     
@@ -2190,6 +2258,7 @@ void WFGUI::CallCalculateCurrents() {
 	      NBatch = EventsEntry->GetNumber()+EventsEntryStart->GetNumber();
 	      GetEnhist()->Reset();	     	     
 	      GetMeasEnhist()->Reset();
+	      ResetGainChargeAccumulator(); // clear the batch gain/charge sums before this run's events
 	}
 
 
@@ -2574,6 +2643,60 @@ void WFGUI::CallCalculateCurrents() {
 	    
 	    CalculatingLabel->SetBackgroundColor(0x00ff00);
 	    CalculatingLabel->SetTitle("Done running in batch.");
+
+	    // ---------------------------------------------------------------
+	    // Auto-export one CSV row per batch run with the requested columns
+	    // ---------------------------------------------------------------
+	    tvthhist->Fit("gaus","Q"); // final quiet refit to get the converged sigma
+	    double time_res_ps = 0.;
+	    if (tvthhist->GetFunction("gaus"))
+	      time_res_ps = tvthhist->GetFunction("gaus")->GetParameter(2) * 1000.; // ns -> ps
+
+	    // ---------------------------------------------------------------
+	    // Build a filename that encodes the parameters used in this run.
+	    // Whichever parameter is currently being SCANNED (ScanActiveParam,
+	    // set by ScanStart()) is left OUT of the filename, so every step
+	    // of a scan writes its row into the SAME file, e.g. a Bias scan
+	    // at fixed H/T/F/DOP/C gives: wf2_results_H300_T300_F10_DOP0_C2.csv
+	    // Outside a scan (ScanActiveParam==-1) all six go into the name,
+	    // exactly as before. Changing any of the non-scanned parameters
+	    // starts a NEW file.
+	    // ---------------------------------------------------------------
+	    std::stringstream csvname_ss;
+	    csvname_ss << "wf2_results";
+	    if (ScanActiveParam != 2) csvname_ss << "_H"   << YMAXentry->GetNumber();
+	    if (ScanActiveParam != 1) csvname_ss << "_T"   << TempEntry->GetNumber();
+	    if (ScanActiveParam != 3) csvname_ss << "_F"   << IrradiationEntry->GetNumber();
+	    if (ScanActiveParam != 0) csvname_ss << "_BV"  << Biasentry->GetNumber();
+	    csvname_ss << "_DOP" << Dopingentry->GetNumber()
+		       << "_C"   << CDEntry->GetNumber()
+		       << ".csv";
+	    std::string csvname = csvname_ss.str();
+
+	    std::ifstream checkcsv(csvname.c_str());
+	    bool needHeader = !checkcsv.good(); // true if file does NOT exist yet
+	    checkcsv.close();
+	    std::ofstream csv(csvname.c_str(), std::ios::app);
+	    if (needHeader)
+	      csv << "Thickness_um,Temperature_K,Fluence_1e14neqcm2,Bias_V,"
+		  << "GainDoping_1e16cm3,Capacitance_pF,NumEvents,ValidEvents,"
+		  << "BulkDoping_Ncm3,BulkDopingAfterIrr_Ncm3,"
+		  << "TimeResolution_ps,Gain,ChargeCollected_fC\n";
+	    csv << YMAXentry->GetNumber()      << ","
+		<< TempEntry->GetNumber()      << ","
+		<< IrradiationEntry->GetNumber()<< ","
+		<< Biasentry->GetNumber()      << ","
+		<< Dopingentry->GetNumber()    << ","
+		<< CDEntry->GetNumber()        << ","
+		<< EventsEntry->GetNumber()    << ","
+		<< SumEventCount                << ","
+		<< GetBulkDoping()             << ","
+		<< GetBulkDopingIrr()          << ","
+		<< time_res_ps                 << ","
+		<< GetAvgGain()                << ","
+		<< GetAvgChargeCollected()     << "\n";
+	    csv.close();
+	    std::cout << "Appended one row to " << csvname << std::endl;
 	  }
 	    //CalculatingLabel2->SetBackgroundColor(0x00ff00);
 	//CalculatingLabel2->SetTitle("Done.");
@@ -2586,7 +2709,93 @@ void WFGUI::CallCalculateCurrents() {
 	QELabel->Layout();
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Generalized scan: sweeps the parameter selected in ScanParamCombo (Bias, Temperature,
+// Thickness, or Fluence) from ScanInitialEntry to ScanFinalEntry in steps of ScanStepEntry.
+// Runs the SAME calculation Potentials+Currents buttons already run, once per step,
+// synchronously (no threads) so each step fully finishes before the next one starts. Every
+// step's results are appended as a row via the CSV export already built into
+// CallCalculateCurrents(). Click Stop Scan to request a clean stop after the current step.
 /////////////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::ScanStart() {
+
+	int param = ScanParamCombo->GetSelected(); // 0=Bias, 1=Temperature, 2=Thickness, 3=Fluence
+	double Vinit  = ScanInitialEntry->GetNumber();
+	double Vfinal = ScanFinalEntry->GetNumber();
+	double Vstep  = ScanStepEntry->GetNumber();
+
+	if (Vstep <= 0)
+	{
+		std::cout << "Scan step must be a positive number." << std::endl;
+		return;
+	}
+
+	std::string pname;
+	switch (param)
+	{
+		case 0: pname = "Bias [V]"; break;
+		case 1: pname = "Temperature [K]"; break;
+		case 2: pname = "Thickness [um]"; break;
+		case 3: pname = "Fluence [1e14 neq/cm2]"; break;
+		default: pname = "Parameter"; break;
+	}
+
+	ScanStopRequested = false;
+	ScanActiveParam = param; // tells the CSV filename builder to drop this parameter from the name
+	SetAllButton(0); // disable buttons while the scan runs, same as a normal calculation does
+	ScanStartButton->SetEnabled(kFALSE);
+
+	for (double val = Vinit; val <= Vfinal + 1e-9; val += Vstep)
+	{
+		if (ScanStopRequested)
+		{
+			std::cout << "Scan stopped by user after this step." << std::endl;
+			break;
+		}
+
+		std::cout << "=== Scan step: " << pname << " = " << val << " ===" << std::endl;
+
+		switch (param)
+		{
+			case 0: Biasentry->SetNumber(val);       break;
+			case 1: TempEntry->SetNumber(val);       break;
+			case 2: YMAXentry->SetNumber(val);        break;
+			case 3: IrradiationEntry->SetNumber(val); break;
+		}
+
+		CalculatingLabel->SetBackgroundColor(0xff0000);
+		std::stringstream lbl;
+		lbl << "Scanning: " << pname << " = " << val << " ...";
+		CalculatingLabel->SetTitle(lbl.str().c_str());
+		gSystem->ProcessEvents(); // keep the GUI responsive/repainting during the scan
+
+		if (CallBoundaryConditions() != 0) continue; // skip this step if boundary conditions failed
+
+		CallCalculatePotentials();  // same computation the "Potentials" button runs
+		FillHist();
+		DrawAllGraph(1);
+
+		CallCalculateCurrents();    // same computation the "Currents" button runs;
+		                            // this call also appends the CSV row for this step
+
+		gSystem->ProcessEvents();
+	}
+
+	ScanActiveParam = -1; // back to normal: filename includes all six parameters again
+	SetAllButton(1);
+	ScanStartButton->SetEnabled(kTRUE);
+	CalculatingLabel->SetBackgroundColor(0x00ff00);
+	CalculatingLabel->SetTitle("Scan finished.");
+	std::cout << "=== Scan finished: " << pname << " from " << Vinit << " to " << Vfinal
+	          << ", step " << Vstep << " ===" << std::endl;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::ScanStop() {
+	ScanStopRequested = true;
+	std::cout << "Stop requested: the scan will stop after the current step finishes." << std::endl;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
 void WFGUI::CallCalculateFields() {
 
   // Free previous allocations using the YMAX that was current at allocation time.
@@ -4975,6 +5184,69 @@ double WFGUI::GetBBNoise() {
 //  return TVth;
 // }
 
+/////////////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::SetMeasuredGain(double g) {
+	MeasuredGain=g;
+}
+//////////////////////////////////////////////////////////////////////////////////////
+double WFGUI::GetMeasuredGain() {
+  return MeasuredGain;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::SetChargeCollected(double q) {
+	ChargeCollected=q;
+}
+//////////////////////////////////////////////////////////////////////////////////////
+double WFGUI::GetChargeCollected() {
+  return ChargeCollected;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::ResetGainChargeAccumulator() {
+	SumQtot = 0.;
+	SumQnogain = 0.;
+	SumEventCount = 0;
+}
+//////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::AddGainChargeSample(double qtot, double qnogain) {
+	// A plain running sum is contagious: a single NaN/inf event (e.g. an event
+	// with zero net charge, 0/0) would poison every subsequent event's average
+	// for the rest of the batch. Skip such events instead of accumulating them.
+	if (!std::isfinite(qtot) || !std::isfinite(qnogain)) return;
+	SumQtot += qtot;
+	SumQnogain += qnogain;
+	SumEventCount++;
+}
+//////////////////////////////////////////////////////////////////////////////////////
+double WFGUI::GetAvgGain() {
+  // Sum of charge over sum of no-gain charge, NOT an average of per-event ratios:
+  // this stays well-defined even when individual events have near-zero charge
+  // (which is exactly what was producing NaN/garbage values before this fix).
+  if (SumQnogain == 0.) return 0.;
+  return SumQtot / SumQnogain;
+}
+//////////////////////////////////////////////////////////////////////////////////////
+double WFGUI::GetAvgChargeCollected() {
+  // Average collected charge PER EVENT, in fC (physically meaningful regardless
+  // of how many events the batch ran, unlike a raw total that grows with NumEvents).
+  if (SumEventCount == 0) return 0.;
+  return (SumQtot / (double) SumEventCount) * 1e15;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::SetBulkDoping(double d) {
+	BulkDoping=d;
+}
+//////////////////////////////////////////////////////////////////////////////////////
+double WFGUI::GetBulkDoping() {
+  return BulkDoping;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::SetBulkDopingIrr(double d) {
+	BulkDopingIrr=d;
+}
+//////////////////////////////////////////////////////////////////////////////////////
+double WFGUI::GetBulkDopingIrr() {
+  return BulkDopingIrr;
+}
 /////////////////////////////////////////////////////////////////////////////////////////////
 void WFGUI::SetJitter(double vt) {
 	CSAJitter=vt;

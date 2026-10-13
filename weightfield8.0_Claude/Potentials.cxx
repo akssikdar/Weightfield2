@@ -627,6 +627,10 @@ void Potentials::SetDopingProfile(void *wfgui, int rflag)	//
 
   vdepl_irr =  (poissonf)*dist*dist*1e-12/2.;
   if (rflag ==0)  cout  << "Bulk doping = "<< setprecision(2) <<  (poissonf)*(EPSILON*EPSILONR)/ECHARGE*1e-6<< "[N/cm^3]; V depletion = " <<  vdepl_irr  <<" [V]; " <<endl;
+
+  // --- store for CSV export ---
+  gui->SetBulkDoping( (poissonf)*(EPSILON*EPSILONR)/ECHARGE*1e-6 );     // N/cm^3, pre-irradiation
+  gui->SetBulkDopingIrr( (poissonf)*(EPSILON*EPSILONR)/ECHARGE*1e-6 );  // default = same value; overwritten below if irradiation effects are on
   
   if (  gui->GetAcceptorCreation() )
     {
@@ -659,6 +663,10 @@ void Potentials::SetDopingProfile(void *wfgui, int rflag)	//
   if ( gui->GetInitialDopRemoval() || gui->GetAcceptorCreation())
     {
       vdepl_irr =  (poissonf + Acceptorpoissonf)*dist*dist*1e-12/2.;
+
+      // --- store for CSV export ---
+      gui->SetBulkDopingIrr( (poissonf + Acceptorpoissonf)*(EPSILON*EPSILONR)/ECHARGE*1e-6 ); // N/cm^3, after irradiation
+
       if (rflag ==0)
 	{
 	  cout  << "After irradiation: Bulk doping = "<< setprecision(2) <<  (poissonf + Acceptorpoissonf)*(EPSILON*EPSILONR)/ECHARGE*1e-6<< "[N/cm^3]; Bulk V depletion = "
