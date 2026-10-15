@@ -2615,6 +2615,7 @@ void CalculateCurrents(Potentials &pot, Field **dfield, Field **wfield, std::vec
 	cout << "DEBUG charge breakdown [fC]: qe=" << qe*1e15 << " qh=" << qh*1e15
 	     << " qeg=" << qeg*1e15 << " qhg=" << qhg*1e15
 	     << " qtot=" << qtot*1e15 << " (qe+qh)=" << (qe+qh)*1e15 << endl;
+	if (!gui->GetSamplingActive()) // skip this per-event debug file during a sampling run
 	{
 	    // Single fixed diagnostic log (not split per configuration, unlike the
 	    // batch-summary CSV) -- every event from every run appends here, along

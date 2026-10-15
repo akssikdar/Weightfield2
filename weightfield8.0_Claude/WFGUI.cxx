@@ -1,6 +1,9 @@
 #include "WFGUI.h"
 #include "TSystem.h"
 #include <cmath>
+#include <algorithm>
+#include <vector>
+#include <iomanip>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -130,6 +133,10 @@ WFGUI::WFGUI(const TGWindow *p, UInt_t w, UInt_t h, TApplication *app): TGMainFr
   SumQtot = 0.;
   SumQnogain = 0.;
   SumEventCount = 0;
+  SamplingActive = false;
+  LastTimeResPs = 0.;
+  LastTVthEntries = 0.;
+  LastTVthChi2Ndf = -1.;
 
     //take intial varible names from parameters file
   //  const char* ifname = "parameters.dat";
@@ -729,6 +736,62 @@ WFGUI::WFGUI(const TGWindow *p, UInt_t w, UInt_t h, TApplication *app): TGMainFr
     ScanGroupFrame->AddFrame(ScanRangeFrame,  new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 0,0,0,0));
     ScanGroupFrame->AddFrame(ScanButtonFrame, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 0,0,0,0));
     ControlFrame->AddFrame(ScanGroupFrame, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 1,1,1,1));
+    ////////////////////////////////////////////
+
+    ////////////////////////////////////////////
+    /////////SAMPLING FRAME (multi-parameter random sampling for ML datasets)/////////////
+    SampGroupFrame = new TGGroupFrame(ControlFrame,"Sampling (ML dataset)",kVerticalFrame);
+    {
+      const char* sampNames[5] = {"Bias [V]","Temperature [K]","Thickness [um]","Fluence [1e14 neq/cm2]","Gain doping [1e16/cm3]"};
+      const double sampMin[5]  = {100., 240., 35., 0., 1.5};
+      const double sampMax[5]  = {600., 320., 100., 25., 4.};
+      const int    sampOn[5]   = {1, 1, 0, 1, 1};
+      for (int p = 0; p < 5; p++)
+	{
+	  SampRowFrame[p] = new TGHorizontalFrame(SampGroupFrame);
+	  TGHorizontalFrame *sampCell = new TGHorizontalFrame(SampRowFrame[p], 170, 22, kFixedWidth);
+	  SampUseButton[p] = new TGCheckButton(sampCell, sampNames[p], 0);
+	  if (sampOn[p]) SampUseButton[p]->SetOn(kTRUE, kFALSE);
+	  sampCell->AddFrame(SampUseButton[p], new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+	  SampMinLabel[p] = new TGLabel(SampRowFrame[p],"min");
+	  SampMinEntry[p] = new TGNumberEntry(SampRowFrame[p], sampMin[p], 6,-1,TGNumberFormat::kNESReal,TGNumberFormat::kNEAAnyNumber,TGNumberFormat::kNELNoLimits);
+	  SampMaxLabel[p] = new TGLabel(SampRowFrame[p],"max");
+	  SampMaxEntry[p] = new TGNumberEntry(SampRowFrame[p], sampMax[p], 6,-1,TGNumberFormat::kNESReal,TGNumberFormat::kNEAAnyNumber,TGNumberFormat::kNELNoLimits);
+	  SampRowFrame[p]->AddFrame(sampCell, new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+	  SampRowFrame[p]->AddFrame(SampMinLabel[p], new TGLayoutHints(kLHintsLeft | kLHintsCenterY,4,1,1,1));
+	  SampRowFrame[p]->AddFrame(SampMinEntry[p], new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+	  SampRowFrame[p]->AddFrame(SampMaxLabel[p], new TGLayoutHints(kLHintsLeft | kLHintsCenterY,6,1,1,1));
+	  SampRowFrame[p]->AddFrame(SampMaxEntry[p], new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+	  SampGroupFrame->AddFrame(SampRowFrame[p], new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 0,0,0,0));
+	}
+    }
+
+    SampCountFrame = new TGHorizontalFrame(SampGroupFrame);
+    SampCountLabel = new TGLabel(SampCountFrame,"Samples:");
+    SampCountEntry = new TGNumberEntry(SampCountFrame, 100, 5,-1,TGNumberFormat::kNESInteger,TGNumberFormat::kNEANonNegative);
+    SampSeedLabel  = new TGLabel(SampCountFrame,"Seed:");
+    SampSeedEntry  = new TGNumberEntry(SampCountFrame, 1, 5,-1,TGNumberFormat::kNESInteger,TGNumberFormat::kNEANonNegative);
+    SampCountFrame->AddFrame(SampCountLabel, new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+    SampCountFrame->AddFrame(SampCountEntry, new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+    SampCountFrame->AddFrame(SampSeedLabel,  new TGLayoutHints(kLHintsLeft | kLHintsCenterY,12,1,1,1));
+    SampCountFrame->AddFrame(SampSeedEntry,  new TGLayoutHints(kLHintsLeft | kLHintsCenterY,1,1,1,1));
+    SampGroupFrame->AddFrame(SampCountFrame, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 0,0,0,0));
+
+    SampButtonFrame = new TGHorizontalFrame(SampGroupFrame);
+    SampStartButton = new TGTextButton(SampButtonFrame," Start Sampling ");
+    SampStopButton  = new TGTextButton(SampButtonFrame," Stop Sampling ");
+    SampStartButton->Associate(this);
+    SampStartButton->SetBackgroundColor(0x66aaff);
+    SampStartButton->Connect("Clicked()","WFGUI",this,"SamplingStart()");
+    SampStartButton->SetEnabled(kTRUE);
+    SampStopButton->Associate(this);
+    SampStopButton->SetBackgroundColor(0xff0000);
+    SampStopButton->Connect("Clicked()","WFGUI",this,"ScanStop()"); // same stop flag as the 1-D scan
+    SampStopButton->SetEnabled(kTRUE);
+    SampButtonFrame->AddFrame(SampStartButton, new TGLayoutHints(kLHintsCenterX,1,1,1,1));
+    SampButtonFrame->AddFrame(SampStopButton,  new TGLayoutHints(kLHintsCenterX,1,1,1,1));
+    SampGroupFrame->AddFrame(SampButtonFrame, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 0,0,0,0));
+    ControlFrame->AddFrame(SampGroupFrame, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX, 1,1,1,1));
     ////////////////////////////////////////////
 
     
@@ -2647,10 +2710,21 @@ void WFGUI::CallCalculateCurrents() {
 	    // ---------------------------------------------------------------
 	    // Auto-export one CSV row per batch run with the requested columns
 	    // ---------------------------------------------------------------
-	    tvthhist->Fit("gaus","Q"); // final quiet refit to get the converged sigma
 	    double time_res_ps = 0.;
-	    if (tvthhist->GetFunction("gaus"))
-	      time_res_ps = tvthhist->GetFunction("gaus")->GetParameter(2) * 1000.; // ns -> ps
+	    double tvth_chi2ndf = -1.;
+	    if (tvthhist->GetEntries() >= 3)
+	      {
+		tvthhist->Fit("gaus","Q"); // final quiet refit to get the converged sigma
+		TF1* tvthfit = tvthhist->GetFunction("gaus");
+		if (tvthfit)
+		  {
+		    time_res_ps = std::fabs(tvthfit->GetParameter(2)) * 1000.; // ns -> ps
+		    if (tvthfit->GetNDF() > 0) tvth_chi2ndf = tvthfit->GetChisquare()/tvthfit->GetNDF();
+		  }
+	      }
+	    LastTimeResPs = time_res_ps;              // read back by SamplingStart()
+	    LastTVthEntries = tvthhist->GetEntries();
+	    LastTVthChi2Ndf = tvth_chi2ndf;
 
 	    // ---------------------------------------------------------------
 	    // Build a filename that encodes the parameters used in this run.
@@ -2662,6 +2736,8 @@ void WFGUI::CallCalculateCurrents() {
 	    // exactly as before. Changing any of the non-scanned parameters
 	    // starts a NEW file.
 	    // ---------------------------------------------------------------
+	    if (!SamplingActive) // a sampling run writes its own dataset file instead
+	    {
 	    std::stringstream csvname_ss;
 	    csvname_ss << "wf2_results";
 	    if (ScanActiveParam != 2) csvname_ss << "_H"   << YMAXentry->GetNumber();
@@ -2697,6 +2773,7 @@ void WFGUI::CallCalculateCurrents() {
 		<< GetAvgChargeCollected()     << "\n";
 	    csv.close();
 	    std::cout << "Appended one row to " << csvname << std::endl;
+	    }
 	  }
 	    //CalculatingLabel2->SetBackgroundColor(0x00ff00);
 	//CalculatingLabel2->SetTitle("Done.");
@@ -2718,6 +2795,12 @@ void WFGUI::CallCalculateCurrents() {
 // CallCalculateCurrents(). Click Stop Scan to request a clean stop after the current step.
 /////////////////////////////////////////////////////////////////////////////////////////////
 void WFGUI::ScanStart() {
+
+	if (SamplingActive || ScanActiveParam != -1)
+	{
+		std::cout << "A scan or sampling run is already in progress." << std::endl;
+		return;
+	}
 
 	int param = ScanParamCombo->GetSelected(); // 0=Bias, 1=Temperature, 2=Thickness, 3=Fluence
 	double Vinit  = ScanInitialEntry->GetNumber();
@@ -2794,6 +2877,232 @@ void WFGUI::ScanStop() {
 	ScanStopRequested = true;
 	std::cout << "Stop requested: the scan will stop after the current step finishes." << std::endl;
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+// Rounds v to a multiple of 'grain' and clamps it to [lo,hi], so that the value written into
+// a GUI entry is one the entry can really hold (Bias and Thickness are integer entries).
+/////////////////////////////////////////////////////////////////////////////////////////////
+static double WF_RoundTo(double v, double grain, double lo, double hi)
+{
+	double r = std::floor(v/grain + 0.5)*grain;
+	if (r < lo) r = lo;
+	if (r > hi) r = hi;
+	return r;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+bool WFGUI::GetSamplingActive() {
+	return SamplingActive;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+// Multi-parameter random sampling for building machine-learning datasets.
+//
+// Every parameter ticked in the Sampling section is varied at the same time. The sample points
+// come from a Latin hypercube: each parameter's [min,max] range is cut into N equal slices and
+// every slice is used exactly once, in an independent random order per parameter, so even a
+// modest N covers the whole parameter space evenly (a grid of 5 parameters would need k^5 runs).
+// Parameters that are not ticked keep the value currently in the GUI.
+//
+// For every sample the same chain the Potentials and Currents buttons run is executed
+// (boundary conditions -> potentials -> fields -> batch currents), synchronously. One row is
+// appended to wf2_ml_dataset_seed<S>_N<N>.csv after each sample, so a partial run is never
+// lost, and a wf2_ml_dataset_seed<S>_N<N>.config.txt file records how the dataset was made.
+// Batch Mode must be ON: time resolution and the averaged gain come from batch statistics.
+/////////////////////////////////////////////////////////////////////////////////////////////
+void WFGUI::SamplingStart() {
+
+	const int NP = 5;
+	// order matches the rows of the Sampling section
+	const char* pname[NP] = {"Bias_V", "Temperature_K", "Thickness_um", "Fluence_1e14neqcm2", "GainDoping_1e16cm3"};
+	TGNumberEntry* target[NP] = {Biasentry, TempEntry, YMAXentry, IrradiationEntry, Dopingentry};
+	const double grain[NP] = {1., 0.1, 1., 0.1, 0.01}; // Bias and Thickness are integer entries
+
+	if (SamplingActive || ScanActiveParam != -1)
+	{
+		std::cout << "A scan or sampling run is already in progress." << std::endl;
+		return;
+	}
+	if (!GetBatchOn())
+	{
+		std::cout << "Sampling needs Batch Mode ON (time resolution and the averaged gain come from batch statistics)." << std::endl;
+		CalculatingLabel->SetBackgroundColor(0xff0000);
+		CalculatingLabel->SetTitle("Sampling needs Batch Mode ON");
+		return;
+	}
+
+	int N = (int) SampCountEntry->GetNumber();
+	unsigned int seed = (unsigned int) SampSeedEntry->GetNumber();
+	if (N < 1)
+	{
+		std::cout << "Sampling: the number of samples must be at least 1." << std::endl;
+		return;
+	}
+
+	std::vector<int> active;
+	double lo[NP], hi[NP];
+	for (int p = 0; p < NP; p++)
+	{
+		lo[p] = SampMinEntry[p]->GetNumber();
+		hi[p] = SampMaxEntry[p]->GetNumber();
+		if (SampUseButton[p]->GetState() == kButtonDown)
+		{
+			if (hi[p] < lo[p])
+			{
+				std::cout << "Sampling: max is smaller than min for " << pname[p] << std::endl;
+				return;
+			}
+			active.push_back(p);
+		}
+	}
+	if (active.empty())
+	{
+		std::cout << "Sampling: tick at least one parameter." << std::endl;
+		return;
+	}
+	int D = (int) active.size();
+
+	// fluence only acts through the irradiation effects, so warn if none is switched on
+	if (SampUseButton[3]->GetState() == kButtonDown &&
+	    !GetInitialDopRemoval() && !GetAcceptorCreation() && !GetGainQuenching() && !GetCCEOn() && !GetLnAcceptorCreation())
+		std::cout << "WARNING: fluence is sampled but no irradiation effect is switched on in the Irradiation section;"
+		          << " the fluence will have no effect (FluenceEff will be 0 in every row)." << std::endl;
+
+	// ---- Latin hypercube: one random permutation of the N slices per parameter ----
+	std::mt19937 rng(seed);
+	std::uniform_real_distribution<double> U01(0., 1.);
+	std::vector< std::vector<double> > value(NP, std::vector<double>(N, 0.));
+	for (int d = 0; d < D; d++)
+	{
+		int p = active[d];
+		std::vector<int> perm(N);
+		for (int i = 0; i < N; i++) perm[i] = i;
+		std::shuffle(perm.begin(), perm.end(), rng);
+		for (int i = 0; i < N; i++)
+		{
+			double u = (perm[i] + U01(rng)) / N; // a random point inside slice perm[i]
+			value[p][i] = WF_RoundTo(lo[p] + u*(hi[p] - lo[p]), grain[p], lo[p], hi[p]);
+		}
+	}
+
+	// ---- output files ----
+	std::stringstream base_ss;
+	base_ss << "wf2_ml_dataset_seed" << seed << "_N" << N;
+	std::string dataname = base_ss.str() + ".csv";
+	std::string cfgname  = base_ss.str() + ".config.txt";
+
+	{
+		std::ofstream hdr(dataname.c_str(), std::ios::trunc); // a rerun with the same seed and N starts a fresh file
+		hdr << "SampleIndex,Seed,Bias_V,Temperature_K,Thickness_um,FluenceEff_1e14neqcm2,GainDoping_1e16cm3,Capacitance_pF,"
+		    << "BulkDoping_Ncm3,BulkDopingAfterIrr_Ncm3,NumEvents,ValidEvents,TVthEntries,TVthFitChi2NDF,Seconds,RowOK,"
+		    << "TimeResolution_ps,Gain,ChargeCollected_fC\n";
+	}
+	{
+		std::ofstream cfg(cfgname.c_str(), std::ios::trunc);
+		cfg << "WeightField2 multi-parameter sampling run\n"
+		    << "Method: Latin hypercube, seed " << seed << ", " << N << " samples, " << D << " sampled parameter(s)\n"
+		    << "Events per sample (Batch Mode 'for events'): " << EventsEntry->GetNumber()
+		    << " (the stock batch loop runs one extra event when 'Starting at event' is 0)\n"
+		    << "Dataset file: " << dataname << "\n\n"
+		    << "Parameters (units as in the GUI entries):\n";
+		for (int p = 0; p < NP; p++)
+		{
+			cfg << "  " << pname[p] << ": ";
+			if (SampUseButton[p]->GetState() == kButtonDown) cfg << "sampled in [" << lo[p] << ", " << hi[p] << "]\n";
+			else cfg << "fixed at " << target[p]->GetNumber() << "\n";
+		}
+		cfg << "  Capacitance_pF: fixed at " << CDEntry->GetNumber() << "\n\n"
+		    << "RowOK = 1 when ValidEvents >= 0.8*NumEvents, Gain > 0 and finite, TimeResolution_ps > 0 and finite,\n"
+		    << "and the Gaussian fit to the threshold-crossing histogram succeeded (TVthFitChi2NDF >= 0).\n"
+		    << "Rows with RowOK = 0 are kept because they mark infeasible or noisy regions; filter on RowOK before training.\n"
+		    << "FluenceEff_1e14neqcm2 is the fluence the physics really used: 0 when no irradiation effect is switched on,\n"
+		    << "whatever number is typed in the Fluence box.\n"
+		    << "Gain = sum(Qtotal)/sum(Qe+Qh) over the batch; ChargeCollected_fC is the mean charge per event.\n"
+		    << "Seconds is the wall-clock time of the sample (potentials + batch).\n";
+	}
+
+	// ---- run ----
+	SamplingActive = true;
+	ScanStopRequested = false;
+	SetAllButton(0); // disable the other buttons while the run is going, as a normal calculation does
+	ScanStartButton->SetEnabled(kFALSE);
+	SampStartButton->SetEnabled(kFALSE);
+
+	int done = 0;
+	for (int s = 0; s < N; s++)
+	{
+		if (ScanStopRequested)
+		{
+			std::cout << "Sampling stopped by user after " << done << " samples." << std::endl;
+			break;
+		}
+
+		for (int d = 0; d < D; d++)
+		{
+			int p = active[d];
+			target[p]->SetNumber(value[p][s]);
+		}
+
+		std::stringstream lbl;
+		lbl << "Sampling " << (s+1) << " / " << N << " ...";
+		CalculatingLabel->SetBackgroundColor(0xff0000);
+		CalculatingLabel->SetTitle(lbl.str().c_str());
+		gSystem->ProcessEvents(); // keep the GUI repainting and the Stop button responsive
+
+		std::cout << "=== Sampling " << (s+1) << " / " << N << ":";
+		for (int d = 0; d < D; d++) std::cout << " " << pname[active[d]] << "=" << target[active[d]]->GetNumber();
+		std::cout << " ===" << std::endl;
+
+		// clear the results of the previous sample so a failed sample cannot inherit them
+		LastTimeResPs = 0.;
+		LastTVthEntries = 0.;
+		LastTVthChi2Ndf = -1.;
+		ResetGainChargeAccumulator();
+		SetBulkDoping(0.);
+		SetBulkDopingIrr(0.);
+
+		std::time_t t0 = std::time(0);
+		bool setupOK = (CallBoundaryConditions() == 0);
+		if (setupOK)
+		{
+			CallCalculatePotentials();  // same computation the "Potentials" button runs
+			FillHist();
+			DrawAllGraph(1);
+			CallCalculateCurrents();    // batch currents; stores the fit results and batch averages read below
+		}
+		double seconds = std::difftime(std::time(0), t0);
+
+		double nEv  = EventsEntry->GetNumber();
+		double gain = GetAvgGain();
+		double tres = LastTimeResPs;
+		bool rowOK = setupOK && (SumEventCount >= 0.8*nEv)
+		             && std::isfinite(gain) && gain > 0.
+		             && std::isfinite(tres) && tres > 0.
+		             && LastTVthChi2Ndf >= 0.;
+		double fluenceEff = setupOK ? std::floor(GetFluence()/1e14*1000. + 0.5)/1000. : 0.;
+
+		std::ofstream out(dataname.c_str(), std::ios::app);
+		out << std::setprecision(8)
+		    << s << "," << seed << ","
+		    << Biasentry->GetNumber() << "," << TempEntry->GetNumber() << "," << YMAXentry->GetNumber() << ","
+		    << fluenceEff << "," << Dopingentry->GetNumber() << "," << CDEntry->GetNumber() << ","
+		    << GetBulkDoping() << "," << GetBulkDopingIrr() << ","
+		    << nEv << "," << SumEventCount << "," << LastTVthEntries << "," << LastTVthChi2Ndf << ","
+		    << seconds << "," << (rowOK ? 1 : 0) << ","
+		    << tres << "," << gain << "," << GetAvgChargeCollected() << "\n";
+		out.close();
+		done++;
+
+		gSystem->ProcessEvents();
+	}
+
+	SamplingActive = false;
+	SetAllButton(1);
+	ScanStartButton->SetEnabled(kTRUE);
+	SampStartButton->SetEnabled(kTRUE);
+	CalculatingLabel->SetBackgroundColor(0x00ff00);
+	CalculatingLabel->SetTitle("Sampling finished.");
+	std::cout << "=== Sampling finished: " << done << " of " << N << " samples written to " << dataname << " ===" << std::endl;
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////
 void WFGUI::CallCalculateFields() {

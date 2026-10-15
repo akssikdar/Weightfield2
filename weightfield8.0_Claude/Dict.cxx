@@ -4,11 +4,11 @@
 #define R__NO_DEPRECATION
 
 /*******************************************************************/
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cassert>
 #define G__DICTIONARY
 #include "ROOT/RConfig.hxx"
 #include "TClass.h"
@@ -61,7 +61,7 @@ namespace ROOT {
          instance("Potentials", ::Potentials::Class_Version(), "Potentials.h", 27,
                   typeid(::Potentials), ::ROOT::Internal::DefineBehavior(ptr, ptr),
                   &::Potentials::Dictionary, isa_proxy, 4,
-                  sizeof(::Potentials) );
+                  sizeof(::Potentials), alignof(::Potentials) );
       instance.SetNew(&new_Potentials);
       instance.SetNewArray(&newArray_Potentials);
       instance.SetDelete(&delete_Potentials);
@@ -93,7 +93,7 @@ namespace ROOT {
          instance("Field", ::Field::Class_Version(), "Field.h", 7,
                   typeid(::Field), ::ROOT::Internal::DefineBehavior(ptr, ptr),
                   &::Field::Dictionary, isa_proxy, 4,
-                  sizeof(::Field) );
+                  sizeof(::Field), alignof(::Field) );
       instance.SetNew(&new_Field);
       instance.SetNewArray(&newArray_Field);
       instance.SetDelete(&delete_Field);
@@ -127,7 +127,7 @@ namespace ROOT {
          instance("Carriers", "Carriers.h", 97,
                   typeid(::Carriers), ::ROOT::Internal::DefineBehavior(ptr, ptr),
                   &Carriers_Dictionary, isa_proxy, 4,
-                  sizeof(::Carriers) );
+                  sizeof(::Carriers), alignof(::Carriers) );
       instance.SetNew(&new_Carriers);
       instance.SetNewArray(&newArray_Carriers);
       instance.SetDelete(&delete_Carriers);
@@ -168,7 +168,7 @@ namespace ROOT {
          instance("WFGUI", ::WFGUI::Class_Version(), "WFGUI.h", 59,
                   typeid(::WFGUI), ::ROOT::Internal::DefineBehavior(ptr, ptr),
                   &::WFGUI::Dictionary, isa_proxy, 4,
-                  sizeof(::WFGUI) );
+                  sizeof(::WFGUI), alignof(::WFGUI) );
       instance.SetDelete(&delete_WFGUI);
       instance.SetDeleteArray(&deleteArray_WFGUI);
       instance.SetDestructor(&destruct_WFGUI);
@@ -400,6 +400,13 @@ namespace ROOT {
    }
 } // end of namespace ROOT for class ::WFGUI
 
+namespace ROOT {
+   // Registration Schema evolution read functions
+   int RecordReadRules_Dict() {
+      return 0;
+   }
+   static int _R__UNIQUE_DICT_(ReadRules_Dict) = RecordReadRules_Dict();R__UseDummy(_R__UNIQUE_DICT_(ReadRules_Dict));
+} // namespace ROOT
 namespace {
   void TriggerDictionaryInitialization_Dict_Impl() {
     static const char* headers[] = {
@@ -410,20 +417,23 @@ namespace {
 nullptr
     };
     static const char* includePaths[] = {
-"/opt/homebrew/Cellar/root/6.32.06/include/root",
-"/Users/nicolo/work/GruppoV_UFSD/Weightfield_evolution/weightfield8.0_Claude/",
+"/home/sanjib/root/include",
+"/home/sanjib/Desktop/Anup/WF2/Weightfield2/weightfield8.0_Claude/",
 nullptr
     };
     static const char* fwdDeclCode = R"DICTFWDDCLS(
 #line 1 "Dict dictionary forward declarations' payload"
+
+#pragma diagnostic push
 #pragma clang diagnostic ignored "-Wkeyword-compat"
 #pragma clang diagnostic ignored "-Wignored-attributes"
 #pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
 extern int __Cling_AutoLoading_Map;
-class __attribute__((annotate("$clingAutoload$Potentials.h")))  Potentials;
-class __attribute__((annotate("$clingAutoload$Field.h")))  Field;
-class __attribute__((annotate("$clingAutoload$Carriers.h")))  Carriers;
-class __attribute__((annotate("$clingAutoload$WFGUI.h")))  WFGUI;
+class  __attribute__((annotate("$clingAutoload$Potentials.h")))  Potentials;
+class  __attribute__((annotate("$clingAutoload$Field.h")))  Field;
+class  __attribute__((annotate("$clingAutoload$Carriers.h")))  Carriers;
+class  __attribute__((annotate("$clingAutoload$WFGUI.h")))  WFGUI;
+#pragma diagnostic pop
 )DICTFWDDCLS";
     static const char* payloadCode = R"DICTPAYLOAD(
 #line 1 "Dict dictionary payload"

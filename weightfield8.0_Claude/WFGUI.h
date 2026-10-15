@@ -170,6 +170,10 @@ class WFGUI : public TGMainFrame {
   double BulkDopingIrr;     // N/cm^3, after irradiation, filled by Potentials::SetDopingProfile
   bool   ScanStopRequested; // set by the Scan section's Stop button
   int    ScanActiveParam;   // -1 = no scan running; 0=Bias,1=Temp,2=Thickness,3=Fluence while ScanStart() loops
+  bool   SamplingActive;    // true while SamplingStart() is running (suppresses the per-batch CSV files)
+  double LastTimeResPs;     // time resolution (Gaussian sigma of the threshold-crossing histogram) of the last batch, ps
+  double LastTVthEntries;   // number of entries in that histogram
+  double LastTVthChi2Ndf;   // chi2/ndf of that Gaussian fit (-1 if the fit could not be done)
   double BetaElectrons;
   double BetaHoles;
   
@@ -611,6 +615,23 @@ class WFGUI : public TGMainFrame {
   TGNumberEntry *ScanStepEntry;
   TGTextButton *ScanStartButton;
   TGTextButton *ScanStopButton;
+
+  // ---- Sampling section (below Scan, above Precision): multi-parameter random sampling for ML datasets ----
+  TGGroupFrame *SampGroupFrame;
+  TGHorizontalFrame *SampRowFrame[5];      // rows: Bias, Temperature, Thickness, Fluence, Gain doping
+  TGCheckButton *SampUseButton[5];
+  TGLabel *SampMinLabel[5];
+  TGNumberEntry *SampMinEntry[5];
+  TGLabel *SampMaxLabel[5];
+  TGNumberEntry *SampMaxEntry[5];
+  TGHorizontalFrame *SampCountFrame;
+  TGLabel *SampCountLabel;
+  TGNumberEntry *SampCountEntry;
+  TGLabel *SampSeedLabel;
+  TGNumberEntry *SampSeedEntry;
+  TGHorizontalFrame *SampButtonFrame;
+  TGTextButton *SampStartButton;
+  TGTextButton *SampStopButton;
   TGTextButton *BetweenStripsButton;
   TGTextButton *BetweenStripsButton2;
   TGTextButton *OnStripsButton;
@@ -990,6 +1011,8 @@ class WFGUI : public TGMainFrame {
 	double GetBulkDopingIrr();
 	void ScanStart();   // runs Potentials+Currents over a range of the selected parameter
 	void ScanStop();    // requests the running scan to stop after the current step
+	void SamplingStart();   // Latin-hypercube sampling over the ticked parameters; writes one ML-ready CSV
+	bool GetSamplingActive();
 	void SetJitter(double);
 	double GetJitter();
 	void SetFJitter(double);
